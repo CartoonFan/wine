@@ -24,28 +24,7 @@
 #include "config.h"
 #include "wine/port.h"
 
-#include <assert.h>
-#include <errno.h>
 #include <limits.h>
-#include <signal.h>
-#ifdef HAVE_SYS_SYSCALL_H
-#include <sys/syscall.h>
-#endif
-#ifdef HAVE_SYS_TIME_H
-# include <sys/time.h>
-#endif
-#ifdef HAVE_POLL_H
-#include <poll.h>
-#endif
-#ifdef HAVE_SYS_POLL_H
-# include <sys/poll.h>
-#endif
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-#ifdef HAVE_SCHED_H
-# include <sched.h>
-#endif
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -321,23 +300,7 @@ NTSTATUS WINAPI NtQueryMutant( HANDLE handle, MUTANT_INFORMATION_CLASS class,
  */
 NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
 {
-    NTSTATUS ret;
-    data_size_t len;
-    struct object_attributes *objattr;
-
-    if ((ret = alloc_object_attributes( attr, &objattr, &len ))) return ret;
-
-    SERVER_START_REQ( create_job )
-    {
-        req->access = access;
-        wine_server_add_data( req, objattr, len );
-        ret = wine_server_call( req );
-        *handle = wine_server_ptr_handle( reply->handle );
-    }
-    SERVER_END_REQ;
-
-    RtlFreeHeap( GetProcessHeap(), 0, objattr );
-    return ret;
+    return unix_funcs->NtCreateJobObject( handle, access, attr );
 }
 
 /******************************************************************************
@@ -346,22 +309,7 @@ NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJ
  */
 NTSTATUS WINAPI NtOpenJobObject( HANDLE *handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
 {
-    NTSTATUS ret;
-
-    if ((ret = validate_open_object_attributes( attr ))) return ret;
-
-    SERVER_START_REQ( open_job )
-    {
-        req->access     = access;
-        req->attributes = attr->Attributes;
-        req->rootdir    = wine_server_obj_handle( attr->RootDirectory );
-        if (attr->ObjectName)
-            wine_server_add_data( req, attr->ObjectName->Buffer, attr->ObjectName->Length );
-        ret = wine_server_call( req );
-        *handle = wine_server_ptr_handle( reply->handle );
-    }
-    SERVER_END_REQ;
-    return ret;
+    return unix_funcs->NtOpenJobObject( handle, access, attr );
 }
 
 /******************************************************************************
@@ -370,19 +318,7 @@ NTSTATUS WINAPI NtOpenJobObject( HANDLE *handle, ACCESS_MASK access, const OBJEC
  */
 NTSTATUS WINAPI NtTerminateJobObject( HANDLE handle, NTSTATUS status )
 {
-    NTSTATUS ret;
-
-    TRACE( "(%p, %d)\n", handle, status );
-
-    SERVER_START_REQ( terminate_job )
-    {
-        req->handle = wine_server_obj_handle( handle );
-        req->status = status;
-        ret = wine_server_call( req );
-    }
-    SERVER_END_REQ;
-
-    return ret;
+    return unix_funcs->NtTerminateJobObject( handle, status );
 }
 
 /******************************************************************************
@@ -392,78 +328,7 @@ NTSTATUS WINAPI NtTerminateJobObject( HANDLE handle, NTSTATUS status )
 NTSTATUS WINAPI NtQueryInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS class, PVOID info,
                                              ULONG len, PULONG ret_len )
 {
-    NTSTATUS ret;
-
-    TRACE( "semi-stub: %p %u %p %u %p\n", handle, class, info, len, ret_len );
-
-    if (class >= MaxJobObjectInfoClass)
-        return STATUS_INVALID_PARAMETER;
-
-    switch (class)
-    {
-    case JobObjectBasicAccountingInformation:
-        {
-            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION *accounting;
-            if (len < sizeof(*accounting))
-                return STATUS_INFO_LENGTH_MISMATCH;
-
-            accounting = (JOBOBJECT_BASIC_ACCOUNTING_INFORMATION *)info;
-
-            SERVER_START_REQ(get_job_info)
-            {
-                req->handle = wine_server_obj_handle( handle );
-                if ((ret = wine_server_call( req )) == STATUS_SUCCESS)
-                {
-                    memset(accounting, 0, sizeof(*accounting));
-                    accounting->TotalProcesses = reply->total_processes;
-                    accounting->ActiveProcesses = reply->active_processes;
-                }
-            }
-            SERVER_END_REQ;
-
-            if (ret_len) *ret_len = sizeof(*accounting);
-            return ret;
-        }
-
-    case JobObjectBasicProcessIdList:
-        {
-            JOBOBJECT_BASIC_PROCESS_ID_LIST *process;
-            if (len < sizeof(*process))
-                return STATUS_INFO_LENGTH_MISMATCH;
-
-            process = (JOBOBJECT_BASIC_PROCESS_ID_LIST *)info;
-            memset(process, 0, sizeof(*process));
-            if (ret_len) *ret_len = sizeof(*process);
-            return STATUS_SUCCESS;
-        }
-
-    case JobObjectExtendedLimitInformation:
-        {
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION *extended_limit;
-            if (len < sizeof(*extended_limit))
-                return STATUS_INFO_LENGTH_MISMATCH;
-
-            extended_limit = (JOBOBJECT_EXTENDED_LIMIT_INFORMATION *)info;
-            memset(extended_limit, 0, sizeof(*extended_limit));
-            if (ret_len) *ret_len = sizeof(*extended_limit);
-            return STATUS_SUCCESS;
-        }
-
-    case JobObjectBasicLimitInformation:
-        {
-            JOBOBJECT_BASIC_LIMIT_INFORMATION *basic_limit;
-            if (len < sizeof(*basic_limit))
-                return STATUS_INFO_LENGTH_MISMATCH;
-
-            basic_limit = (JOBOBJECT_BASIC_LIMIT_INFORMATION *)info;
-            memset(basic_limit, 0, sizeof(*basic_limit));
-            if (ret_len) *ret_len = sizeof(*basic_limit);
-            return STATUS_SUCCESS;
-        }
-
-    default:
-        return STATUS_NOT_IMPLEMENTED;
-    }
+    return unix_funcs->NtQueryInformationJobObject( handle, class, info, len, ret_len );
 }
 
 /******************************************************************************
@@ -472,63 +337,7 @@ NTSTATUS WINAPI NtQueryInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS c
  */
 NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS class, PVOID info, ULONG len )
 {
-    NTSTATUS status = STATUS_NOT_IMPLEMENTED;
-    JOBOBJECT_BASIC_LIMIT_INFORMATION *basic_limit;
-    ULONG info_size = sizeof(JOBOBJECT_BASIC_LIMIT_INFORMATION);
-    DWORD limit_flags = JOB_OBJECT_BASIC_LIMIT_VALID_FLAGS;
-
-    TRACE( "(%p, %u, %p, %u)\n", handle, class, info, len );
-
-    if (class >= MaxJobObjectInfoClass)
-        return STATUS_INVALID_PARAMETER;
-
-    switch (class)
-    {
-
-    case JobObjectExtendedLimitInformation:
-        info_size = sizeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION);
-        limit_flags = JOB_OBJECT_EXTENDED_LIMIT_VALID_FLAGS;
-        /* fallthrough */
-    case JobObjectBasicLimitInformation:
-        if (len != info_size)
-            return STATUS_INVALID_PARAMETER;
-
-        basic_limit = info;
-        if (basic_limit->LimitFlags & ~limit_flags)
-            return STATUS_INVALID_PARAMETER;
-
-        SERVER_START_REQ( set_job_limits )
-        {
-            req->handle = wine_server_obj_handle( handle );
-            req->limit_flags = basic_limit->LimitFlags;
-            status = wine_server_call( req );
-        }
-        SERVER_END_REQ;
-        break;
-
-    case JobObjectAssociateCompletionPortInformation:
-        if (len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
-            return STATUS_INVALID_PARAMETER;
-
-        SERVER_START_REQ( set_job_completion_port )
-        {
-            JOBOBJECT_ASSOCIATE_COMPLETION_PORT *port_info = info;
-            req->job = wine_server_obj_handle( handle );
-            req->port = wine_server_obj_handle( port_info->CompletionPort );
-            req->key = wine_server_client_ptr( port_info->CompletionKey );
-            status = wine_server_call(req);
-        }
-        SERVER_END_REQ;
-        break;
-
-    case JobObjectBasicUIRestrictions:
-        status = STATUS_SUCCESS;
-        /* fallthrough */
-    default:
-        FIXME( "stub: %p %u %p %u\n", handle, class, info, len );
-    }
-
-    return status;
+    return unix_funcs->NtSetInformationJobObject( handle, class, info, len );
 }
 
 /******************************************************************************
@@ -537,19 +346,7 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
  */
 NTSTATUS WINAPI NtIsProcessInJob( HANDLE process, HANDLE job )
 {
-    NTSTATUS status;
-
-    TRACE( "(%p %p)\n", job, process );
-
-    SERVER_START_REQ( process_in_job )
-    {
-        req->job     = wine_server_obj_handle( job );
-        req->process = wine_server_obj_handle( process );
-        status = wine_server_call( req );
-    }
-    SERVER_END_REQ;
-
-    return status;
+    return unix_funcs->NtIsProcessInJob( process, job );
 }
 
 /******************************************************************************
@@ -558,19 +355,7 @@ NTSTATUS WINAPI NtIsProcessInJob( HANDLE process, HANDLE job )
  */
 NTSTATUS WINAPI NtAssignProcessToJobObject( HANDLE job, HANDLE process )
 {
-    NTSTATUS status;
-
-    TRACE( "(%p %p)\n", job, process );
-
-    SERVER_START_REQ( assign_job )
-    {
-        req->job     = wine_server_obj_handle( job );
-        req->process = wine_server_obj_handle( process );
-        status = wine_server_call( req );
-    }
-    SERVER_END_REQ;
-
-    return status;
+    return unix_funcs->NtAssignProcessToJobObject( job, process );
 }
 
 /*
@@ -741,122 +526,31 @@ NTSTATUS WINAPI NtReleaseKeyedEvent( HANDLE handle, const void *key,
 /******************************************************************
  *              NtCreateIoCompletion (NTDLL.@)
  *              ZwCreateIoCompletion (NTDLL.@)
- *
- * Creates I/O completion object.
- *
- * PARAMS
- *      CompletionPort            [O] created completion object handle will be placed there
- *      DesiredAccess             [I] desired access to a handle (combination of IO_COMPLETION_*)
- *      ObjectAttributes          [I] completion object attributes
- *      NumberOfConcurrentThreads [I] desired number of concurrent active worker threads
- *
  */
-NTSTATUS WINAPI NtCreateIoCompletion( PHANDLE CompletionPort, ACCESS_MASK DesiredAccess,
-                                      POBJECT_ATTRIBUTES attr, ULONG NumberOfConcurrentThreads )
+NTSTATUS WINAPI NtCreateIoCompletion( HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBUTES *attr,
+                                      ULONG threads )
 {
-    NTSTATUS status;
-    data_size_t len;
-    struct object_attributes *objattr;
-
-    TRACE("(%p, %x, %p, %d)\n", CompletionPort, DesiredAccess, attr, NumberOfConcurrentThreads);
-
-    if (!CompletionPort)
-        return STATUS_INVALID_PARAMETER;
-
-    if ((status = alloc_object_attributes( attr, &objattr, &len ))) return status;
-
-    SERVER_START_REQ( create_completion )
-    {
-        req->access     = DesiredAccess;
-        req->concurrent = NumberOfConcurrentThreads;
-        wine_server_add_data( req, objattr, len );
-        if (!(status = wine_server_call( req )))
-            *CompletionPort = wine_server_ptr_handle( reply->handle );
-    }
-    SERVER_END_REQ;
-
-    RtlFreeHeap( GetProcessHeap(), 0, objattr );
-    return status;
+    return unix_funcs->NtCreateIoCompletion( handle, access, attr, threads );
 }
 
 /******************************************************************
  *              NtSetIoCompletion (NTDLL.@)
  *              ZwSetIoCompletion (NTDLL.@)
- *
- * Inserts completion message into queue
- *
- * PARAMS
- *      CompletionPort           [I] HANDLE to completion object
- *      CompletionKey            [I] completion key
- *      CompletionValue          [I] completion value (usually pointer to OVERLAPPED)
- *      Status                   [I] operation status
- *      NumberOfBytesTransferred [I] number of bytes transferred
  */
-NTSTATUS WINAPI NtSetIoCompletion( HANDLE CompletionPort, ULONG_PTR CompletionKey,
-                                   ULONG_PTR CompletionValue, NTSTATUS Status,
-                                   SIZE_T NumberOfBytesTransferred )
+NTSTATUS WINAPI NtSetIoCompletion( HANDLE handle, ULONG_PTR key, ULONG_PTR value,
+                                   NTSTATUS status, SIZE_T count )
 {
-    NTSTATUS status;
-
-    TRACE("(%p, %lx, %lx, %x, %lx)\n", CompletionPort, CompletionKey,
-          CompletionValue, Status, NumberOfBytesTransferred);
-
-    SERVER_START_REQ( add_completion )
-    {
-        req->handle      = wine_server_obj_handle( CompletionPort );
-        req->ckey        = CompletionKey;
-        req->cvalue      = CompletionValue;
-        req->status      = Status;
-        req->information = NumberOfBytesTransferred;
-        status = wine_server_call( req );
-    }
-    SERVER_END_REQ;
-    return status;
+    return unix_funcs->NtSetIoCompletion( handle, key, value, status, count );
 }
 
 /******************************************************************
  *              NtRemoveIoCompletion (NTDLL.@)
  *              ZwRemoveIoCompletion (NTDLL.@)
- *
- * (Wait for and) retrieve first completion message from completion object's queue
- *
- * PARAMS
- *      CompletionPort  [I] HANDLE to I/O completion object
- *      CompletionKey   [O] completion key
- *      CompletionValue [O] Completion value given in NtSetIoCompletion or in async operation
- *      iosb            [O] IO_STATUS_BLOCK of completed asynchronous operation
- *      WaitTime        [I] optional wait time in NTDLL format
- *
  */
-NTSTATUS WINAPI NtRemoveIoCompletion( HANDLE CompletionPort, PULONG_PTR CompletionKey,
-                                      PULONG_PTR CompletionValue, PIO_STATUS_BLOCK iosb,
-                                      PLARGE_INTEGER WaitTime )
+NTSTATUS WINAPI NtRemoveIoCompletion( HANDLE handle, ULONG_PTR *key, ULONG_PTR *value,
+                                      IO_STATUS_BLOCK *io, LARGE_INTEGER *timeout )
 {
-    NTSTATUS status;
-
-    TRACE("(%p, %p, %p, %p, %p)\n", CompletionPort, CompletionKey,
-          CompletionValue, iosb, WaitTime);
-
-    for(;;)
-    {
-        SERVER_START_REQ( remove_completion )
-        {
-            req->handle = wine_server_obj_handle( CompletionPort );
-            if (!(status = wine_server_call( req )))
-            {
-                *CompletionKey    = reply->ckey;
-                *CompletionValue  = reply->cvalue;
-                iosb->Information = reply->information;
-                iosb->u.Status    = reply->status;
-            }
-        }
-        SERVER_END_REQ;
-        if (status != STATUS_PENDING) break;
-
-        status = NtWaitForSingleObject( CompletionPort, FALSE, WaitTime );
-        if (status != WAIT_OBJECT_0) break;
-    }
-    return status;
+    return unix_funcs->NtRemoveIoCompletion( handle, key, value, io, timeout );
 }
 
 /******************************************************************
@@ -866,130 +560,26 @@ NTSTATUS WINAPI NtRemoveIoCompletion( HANDLE CompletionPort, PULONG_PTR Completi
 NTSTATUS WINAPI NtRemoveIoCompletionEx( HANDLE port, FILE_IO_COMPLETION_INFORMATION *info, ULONG count,
                                         ULONG *written, LARGE_INTEGER *timeout, BOOLEAN alertable )
 {
-    NTSTATUS ret;
-    ULONG i = 0;
-
-    TRACE("%p %p %u %p %p %u\n", port, info, count, written, timeout, alertable);
-
-    for (;;)
-    {
-        while (i < count)
-        {
-            SERVER_START_REQ( remove_completion )
-            {
-                req->handle = wine_server_obj_handle( port );
-                if (!(ret = wine_server_call( req )))
-                {
-                    info[i].CompletionKey             = reply->ckey;
-                    info[i].CompletionValue           = reply->cvalue;
-                    info[i].IoStatusBlock.Information = reply->information;
-                    info[i].IoStatusBlock.u.Status    = reply->status;
-                }
-            }
-            SERVER_END_REQ;
-
-            if (ret != STATUS_SUCCESS) break;
-
-            ++i;
-        }
-
-        if (i || ret != STATUS_PENDING)
-        {
-            if (ret == STATUS_PENDING)
-                ret = STATUS_SUCCESS;
-            break;
-        }
-
-        ret = NtWaitForSingleObject( port, alertable, timeout );
-        if (ret != WAIT_OBJECT_0) break;
-    }
-
-    *written = i ? i : 1;
-    return ret;
+    return unix_funcs->NtRemoveIoCompletionEx( port, info, count, written, timeout, alertable );
 }
 
 /******************************************************************
  *              NtOpenIoCompletion (NTDLL.@)
  *              ZwOpenIoCompletion (NTDLL.@)
- *
- * Opens I/O completion object
- *
- * PARAMS
- *      CompletionPort     [O] completion object handle will be placed there
- *      DesiredAccess      [I] desired access to a handle (combination of IO_COMPLETION_*)
- *      ObjectAttributes   [I] completion object name
- *
  */
 NTSTATUS WINAPI NtOpenIoCompletion( HANDLE *handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
 {
-    NTSTATUS status;
-
-    if (!handle) return STATUS_INVALID_PARAMETER;
-    if ((status = validate_open_object_attributes( attr ))) return status;
-
-    SERVER_START_REQ( open_completion )
-    {
-        req->access     = access;
-        req->attributes = attr->Attributes;
-        req->rootdir    = wine_server_obj_handle( attr->RootDirectory );
-        if (attr->ObjectName)
-            wine_server_add_data( req, attr->ObjectName->Buffer, attr->ObjectName->Length );
-        status = wine_server_call( req );
-        *handle = wine_server_ptr_handle( reply->handle );
-    }
-    SERVER_END_REQ;
-    return status;
+    return unix_funcs->NtOpenIoCompletion( handle, access, attr );
 }
 
 /******************************************************************
  *              NtQueryIoCompletion (NTDLL.@)
  *              ZwQueryIoCompletion (NTDLL.@)
- *
- * Requests information about given I/O completion object
- *
- * PARAMS
- *      CompletionPort        [I] HANDLE to completion port to request
- *      InformationClass      [I] information class
- *      CompletionInformation [O] user-provided buffer for data
- *      BufferLength          [I] buffer length
- *      RequiredLength        [O] required buffer length
- *
  */
-NTSTATUS WINAPI NtQueryIoCompletion( HANDLE CompletionPort, IO_COMPLETION_INFORMATION_CLASS InformationClass,
-                                     PVOID CompletionInformation, ULONG BufferLength, PULONG RequiredLength )
+NTSTATUS WINAPI NtQueryIoCompletion( HANDLE handle, IO_COMPLETION_INFORMATION_CLASS class,
+                                     void *buffer, ULONG len, ULONG *ret_len )
 {
-    NTSTATUS status;
-
-    TRACE("(%p, %d, %p, 0x%x, %p)\n", CompletionPort, InformationClass, CompletionInformation,
-          BufferLength, RequiredLength);
-
-    if (!CompletionInformation) return STATUS_INVALID_PARAMETER;
-    switch( InformationClass )
-    {
-        case IoCompletionBasicInformation:
-            {
-                ULONG *info = CompletionInformation;
-
-                if (RequiredLength) *RequiredLength = sizeof(*info);
-                if (BufferLength != sizeof(*info))
-                    status = STATUS_INFO_LENGTH_MISMATCH;
-                else
-                {
-                    SERVER_START_REQ( query_completion )
-                    {
-                        req->handle = wine_server_obj_handle( CompletionPort );
-                        if (!(status = wine_server_call( req )))
-                            *info = reply->depth;
-                    }
-                    SERVER_END_REQ;
-                }
-            }
-            break;
-        default:
-            status = STATUS_INVALID_PARAMETER;
-            break;
-    }
-    return status;
+    return unix_funcs->NtQueryIoCompletion( handle, class, buffer, len, ret_len );
 }
 
 NTSTATUS NTDLL_AddCompletion( HANDLE hFile, ULONG_PTR CompletionValue,

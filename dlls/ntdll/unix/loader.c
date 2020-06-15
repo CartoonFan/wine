@@ -820,12 +820,15 @@ static struct unix_funcs unix_funcs =
     NtAlertThread,
     NtAllocateVirtualMemory,
     NtAreMappedFilesTheSame,
+    NtAssignProcessToJobObject,
     NtCancelTimer,
     NtClearEvent,
     NtClose,
     NtContinue,
     NtCreateEvent,
     NtCreateFile,
+    NtCreateIoCompletion,
+    NtCreateJobObject,
     NtCreateKeyedEvent,
     NtCreateMailslotFile,
     NtCreateMutant,
@@ -842,10 +845,13 @@ static struct unix_funcs unix_funcs =
     NtFreeVirtualMemory,
     NtGetContextThread,
     NtGetWriteWatch,
+    NtIsProcessInJob,
     NtLockVirtualMemory,
     NtMapViewOfSection,
     NtOpenEvent,
     NtOpenFile,
+    NtOpenIoCompletion,
+    NtOpenJobObject,
     NtOpenKeyedEvent,
     NtOpenMutant,
     NtOpenSection,
@@ -858,6 +864,9 @@ static struct unix_funcs unix_funcs =
     NtQueryDirectoryFile,
     NtQueryEvent,
     NtQueryFullAttributesFile,
+    NtQueryInformationFile,
+    NtQueryInformationJobObject,
+    NtQueryIoCompletion,
     NtQueryMutant,
     NtQueryPerformanceCounter,
     NtQuerySection,
@@ -871,16 +880,22 @@ static struct unix_funcs unix_funcs =
     NtReleaseKeyedEvent,
     NtReleaseMutant,
     NtReleaseSemaphore,
+    NtRemoveIoCompletion,
+    NtRemoveIoCompletionEx,
     NtResetEvent,
     NtResetWriteWatch,
     NtResumeThread,
     NtSetContextThread,
     NtSetEvent,
+    NtSetInformationFile,
+    NtSetInformationJobObject,
+    NtSetIoCompletion,
     NtSetLdtEntries,
     NtSetSystemTime,
     NtSetTimer,
     NtSignalAndWaitForSingleObject,
     NtSuspendThread,
+    NtTerminateJobObject,
     NtTerminateThread,
     NtUnlockVirtualMemory,
     NtUnmapViewOfSection,
@@ -942,8 +957,6 @@ static struct unix_funcs unix_funcs =
     server_handle_to_fd,
     server_release_fd,
     server_init_process_done,
-    file_id_to_unix_file_name,
-    nt_to_unix_file_name_attr,
     nt_to_unix_file_name,
     unmount_device,
     set_show_dot_files,
@@ -1214,7 +1227,6 @@ void __wine_main( int argc, char *argv[], char *envp[] )
     fixup_ntdll_imports( &__wine_spec_nt_header, module );
 
     init_environment( argc, argv, envp );
-    init_files();
 
 #ifdef __APPLE__
     apple_main_thread();
@@ -1249,7 +1261,6 @@ NTSTATUS __cdecl __wine_init_unix_lib( HMODULE module, const void *ptr_in, void 
     map_so_dll( nt, module );
     fixup_ntdll_imports( &__wine_spec_nt_header, module );
     init_environment( __wine_main_argc, __wine_main_argv, envp );
-    init_files();
     *(struct unix_funcs **)ptr_out = &unix_funcs;
     wine_mmap_enum_reserved_areas( add_area, NULL, 0 );
     return STATUS_SUCCESS;
